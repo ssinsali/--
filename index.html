@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>지뢰찾기</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background: #f4f4f4;
+  }
+
+  #info {
+    margin: 10px;
+    font-size: 18px;
+  }
+
+  #board {
+    display: grid;
+    justify-content: center;
+    margin: 20px auto;
+    gap: 2px;
+  }
+
+  .cell {
+    width: 32px;
+    height: 32px;
+    background: #999;
+    border: 1px solid #666;
+    font-weight: bold;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 32px;
+    user-select: none;
+  }
+
+  .open {
+    background: #ddd;
+    cursor: default;
+  }
+
+  .mine {
+    background: #ff6b6b;
+  }
+
+  .flag {
+    background: #f6d365;
+  }
+
+  .preview {
+    background: #bfc5cb;
+    transform: translateY(1px);
+  }
+
+  button {
+    padding: 8px 16px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<h1>지뢰찾기</h1>
+
+<div id="info">
+  남은 지뢰: <span id="mineCount"></span>
+</div>
+
+<button onclick="startGame()">다시 시작</button>
+
+<div id="board"></div>
+
+<script>
+const rows = 10;
+const cols = 10;
+const mines = 15;
+
+let board = [];
+let gameOver = false;
+let flags = 0;
+
+let leftDown = false;
+let rightDown = false;
+let previewCell = null;
+
+function startGame() {
+  board = [];
+  gameOver = false;
+  flags = 0;
+  leftDown = false;
+  rightDown = false;
+  previewCell = null;
+
+  document.getElementById("mineCount").textContent = mines;
+
+  const boardEl = document.getElementById("board");
+  boardEl.innerHTML = "";
+  boardEl.style.gridTemplateColumns = `repeat(${cols}, 32px)`;
+
+  for (let r = 0; r < rows; r++) {
+    board[r] = [];
+
+    for (let c = 0; c < cols; c++) {
+      board[r][c] = {
+        mine: false,
+        open: false,
+        flag: false,
+        count: 0
+      };
+
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.r = r;
+      cell.dataset.c = c;
+
+      cell.addEventListener("click", function(e) {
+        if (rightDown) return;
+        openCell(r, c);
+      });
+
+      cell.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+        toggleFlag(r, c);
+      });
+
+      cell.addEventListener("mousedown", function(e) {
+        if (gameOver) return;
+
+        if (e.button === 0) leftDown = true;
+        if (e.button === 2) rightDown = true;
+
+        if (leftDown && rightDown) {
+          previewCell = { r, c };
+          previewAround(r, c, true);
+        }
+      });
+
+      cell.addEventListener("mouseup", function(e) {
+        if (gameOver) return;
+
+        if (previewCell) {
+          previewAround(previewCell.r, previewCell.c, false);
+        }
+
+        if (leftDown && rightDown && previewCell) {
+          chordOpen(previewCell.r, previewCell.c);
+        }
+
+        if (e.button === 0) leftDown = false;
+        if (e.button === 2) rightDown = false;
+
+        previewCell = null;
+      });
+
+      boardEl.appendChild(cell);
+    }
+  }
+
+  document.addEventListener("mouseup", function() {
+    if (previewCell) {
+      previewAround(previewCell.r, previewCell.c, false);
+      previewCell = null;
+    }
+
+    leftDown = false;
+    rightDown = false;
+  });
+
+  placeMines();
+  calculateNumbers();
+}
+
+function placeMines() {
+  let placed = 0;
+
+  while (placed < mines) {
+    const r = Math.floor(Math.random() * rows);
+    const c = Math.floor(Math.random() * cols);
+
+    if (!board[r][c].mine) {
+      board[r][c].mine = true;
+      placed++;
+    }
+  }
+}
+
+function calculateNumbers() {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (board[r][c].mine) continue;
+
+      let count = 0;
+
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr;
+          const nc = c + dc;
+
+          if (
+            nr >= 0 && nr < rows &&
+            nc >= 0 && nc < cols &&
+            board[nr][nc].mine
+          ) {
+            count++;
+          }
+        }
+      }
+
+      board[r][c].count = count;
+    }
+  }
+}
+
+function openCell(r, c) {
+  if (gameOver) return;
+
+  const cellData = board[r][c];
+  if (cellData.open || cellData.flag) return;
+
+  cellData.open = true;
+
+  const cell = getCell(r, c);
+  cell.classList.add("open");
+
+  if (cellData.mine) {
+    cell.textContent = "💣";
+    cell.classList.add("mine");
+    endGame(false);
+    return;
+  }
+
+  if (cellData.count > 0) {
+    cell.textContent = cellData.count;
+    setNumberColor(cell, cellData.count);
+  } else {
+    openAround(r, c);
+  }
+
+  checkWin();
+}
+
+function openAround(r, c) {
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const nr = r + dr;
+      const nc = c + dc;
+
+      if (
+        nr >= 0 && nr < rows &&
+        nc >= 0 && nc < cols &&
+        !board[nr][nc].open &&
+        !board[nr][nc].flag
+      ) {
+        openCell(nr, nc);
+      }
+    }
+  }
+}
+
+function toggleFlag(r, c) {
+  if (gameOver) return;
+
+  const cellData = board[r][c];
+  if (cellData.open) return;
+
+  const cell = getCell(r, c);
+
+  if (cellData.flag) {
+    cellData.flag = false;
+    cell.textContent = "";
+    cell.classList.remove("flag");
+    flags--;
+  } else {
+    cellData.flag = true;
+    cell.textContent = "🚩";
+    cell.classList.add("flag");
+    flags++;
+  }
+
+  document.getElementById("mineCount").textContent = mines - flags;
+}
+
+function previewAround(r, c, on) {
+  const cellData = board[r][c];
+
+  if (!cellData.open) return;
+
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+
+      const nr = r + dr;
+      const nc = c + dc;
+
+      if (
+        nr >= 0 && nr < rows &&
+        nc >= 0 && nc < cols
+      ) {
+        const target = board[nr][nc];
+
+        if (!target.open && !target.flag) {
+          getCell(nr, nc).classList.toggle("preview", on);
+        }
+      }
+    }
+  }
+}
+
+function chordOpen(r, c) {
+  const cellData = board[r][c];
+
+  if (!cellData.open || cellData.count === 0) return;
+
+  let flagCount = 0;
+
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const nr = r + dr;
+      const nc = c + dc;
+
+      if (
+        nr >= 0 && nr < rows &&
+        nc >= 0 && nc < cols &&
+        board[nr][nc].flag
+      ) {
+        flagCount++;
+      }
+    }
+  }
+
+  if (flagCount !== cellData.count) return;
+
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const nr = r + dr;
+      const nc = c + dc;
+
+      if (
+        nr >= 0 && nr < rows &&
+        nc >= 0 && nc < cols &&
+        !board[nr][nc].flag
+      ) {
+        openCell(nr, nc);
+      }
+    }
+  }
+}
+
+function endGame(win) {
+  gameOver = true;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (board[r][c].mine) {
+        const cell = getCell(r, c);
+        cell.textContent = "💣";
+        cell.classList.add("mine");
+      }
+    }
+  }
+
+  setTimeout(() => {
+    alert(win ? "성공! 모든 지뢰를 피했습니다!" : "실패! 지뢰를 밟았습니다.");
+  }, 100);
+}
+
+function checkWin() {
+  let opened = 0;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (board[r][c].open) opened++;
+    }
+  }
+
+  if (opened === rows * cols - mines) {
+    endGame(true);
+  }
+}
+
+function getCell(r, c) {
+  return document.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+}
+
+function setNumberColor(cell, number) {
+  const colors = {
+    1: "blue",
+    2: "green",
+    3: "red",
+    4: "navy",
+    5: "brown",
+    6: "teal",
+    7: "black",
+    8: "gray"
+  };
+
+  cell.style.color = colors[number] || "black";
+}
+
+startGame();
+</script>
+
+</body>
+</html>
